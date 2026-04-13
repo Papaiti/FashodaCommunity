@@ -143,7 +143,7 @@ export default function App() {
             <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-200">
               <Users className="text-white w-6 h-6" />
             </div>
-            <h1 className="font-bold text-xl text-slate-900 tracking-tight leading-none">Fashoda<br/><span className="text-indigo-600 text-sm font-medium">Community Rwanda</span></h1>
+            <h1 className="font-bold text-xl text-slate-900 tracking-tight leading-none">Fashoda Student<br/><span className="text-indigo-600 text-sm font-medium">Rwanda (FSR)</span></h1>
           </div>
           
           <nav className="space-y-1">
@@ -241,7 +241,7 @@ function LoginScreen({ login }: { login: () => void }) {
             <Users className="text-white w-6 h-6" />
           </div>
           <h1 className="text-5xl font-extrabold text-white mb-6 leading-tight tracking-tighter">
-            Fashoda<br/>Community <span className="text-indigo-200">Rwanda</span>
+            Fashoda Student<br/>Rwanda <span className="text-indigo-200">(FSR)</span>
           </h1>
           <p className="text-indigo-100 text-lg max-w-sm font-medium leading-relaxed">
             A professional student management and tracking system designed for clarity and efficiency.
@@ -290,7 +290,7 @@ function LoginScreen({ login }: { login: () => void }) {
             </div>
           </div>
           <p className="mt-8 text-[10px] text-center text-slate-400 uppercase tracking-[0.2em] font-bold">
-            Powered by FashodaCommunity
+            Powered by Fashoda Student Rwanda (FSR)
           </p>
         </div>
       </div>
@@ -553,7 +553,7 @@ function Dashboard({ students, tracking, onNavigate }: { students: Student[], tr
       <header className="flex flex-col md:flex-row md:items-end justify-between gap-6">
         <div>
           <h2 className="text-4xl font-extrabold text-slate-900 tracking-tight mb-2">Dashboard</h2>
-          <p className="text-slate-500 font-medium">Real-time overview of FashodaCommunity student program</p>
+          <p className="text-slate-500 font-medium">Real-time overview of Fashoda Student Rwanda (FSR) student program</p>
         </div>
         <div className="bg-white px-5 py-3 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-3">
           <div className="w-8 h-8 bg-indigo-50 rounded-lg flex items-center justify-center">
@@ -716,7 +716,7 @@ function Dashboard({ students, tracking, onNavigate }: { students: Student[], tr
             <div>
               <h3 className="text-2xl font-bold mb-4">Community Impact</h3>
               <p className="text-indigo-200 text-sm leading-relaxed mb-8">
-                Your dedication to tracking and managing students helps FashodaCommunity grow and thrive in Rwanda.
+                Your dedication to tracking and managing students helps Fashoda Student Rwanda (FSR) grow and thrive.
               </p>
               
               <div className="space-y-6">
