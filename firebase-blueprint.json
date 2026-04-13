@@ -1,0 +1,68 @@
+{
+  "entities": {
+    "Student": {
+      "title": "Student",
+      "description": "A student in the community program",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Full name of the student" },
+        "studentId": { "type": "string", "description": "Unique student identifier" },
+        "email": { "type": "string", "format": "email", "description": "Email address of the student" },
+        "graduationMedia": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "type": { "type": "string", "enum": ["image", "video", "audio"] },
+              "url": { "type": "string" },
+              "name": { "type": "string" },
+              "uploadedAt": { "type": "string", "format": "date-time" }
+            }
+          },
+          "description": "Media files related to student graduation"
+        },
+        "createdAt": { "type": "string", "format": "date-time", "description": "When the record was created" },
+        "createdBy": { "type": "string", "description": "UID of the admin who added the student" }
+      },
+      "required": ["name", "createdAt", "createdBy"]
+    },
+    "Tracking": {
+      "title": "Tracking",
+      "description": "Daily tracking record for a student",
+      "type": "object",
+      "properties": {
+        "studentId": { "type": "string", "description": "Reference to the student ID" },
+        "date": { "type": "string", "format": "date", "description": "Date of tracking (YYYY-MM-DD)" },
+        "status": { "type": "string", "enum": ["In Rwanda", "Traveled"], "description": "Tracking status" },
+        "markedAt": { "type": "string", "format": "date-time", "description": "When the tracking was marked" },
+        "markedBy": { "type": "string", "description": "UID of the admin who marked it" }
+      },
+      "required": ["studentId", "date", "status", "markedAt", "markedBy"]
+    },
+    "User": {
+      "title": "User",
+      "description": "Admin user profile",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "format": "email" },
+        "role": { "type": "string", "enum": ["admin"], "description": "User role" },
+        "name": { "type": "string" }
+      },
+      "required": ["email", "role"]
+    }
+  },
+  "firestore": {
+    "/students/{studentId}": {
+      "schema": "Student",
+      "description": "Collection of students"
+    },
+    "/tracking/{trackingId}": {
+      "schema": "Tracking",
+      "description": "Collection of tracking records"
+    },
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Admin user profiles"
+    }
+  }
+}
