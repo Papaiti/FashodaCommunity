@@ -13,7 +13,7 @@ import {
   getDocs,
   writeBatch
 } from 'firebase/firestore';
-import { db, auth, handleFirestoreError, storage, ref, uploadBytes, getDownloadURL, deleteObject } from './firebase';
+import { db, auth, handleFirestoreError, storage, ref, uploadBytes, getDownloadURL, deleteObject, uploadBytesResumable } from './firebase';
 import { useAuth } from './AuthContext';
 import { 
   Users, 
@@ -35,7 +35,18 @@ import {
   X,
   Loader2,
   CheckSquare,
-  Square
+  Square,
+  FileText,
+  Shield,
+  Award,
+  ChevronDown,
+  ChevronUp,
+  History,
+  Bell,
+  Check,
+  Info,
+  AlertCircle,
+  Megaphone
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import * as XLSX from 'xlsx';
@@ -71,14 +82,48 @@ interface Tracking {
   markedBy: string;
 }
 
+interface Leadership {
+  id: string;
+  name: string;
+  position: 'President' | 'Deputy President' | 'Speaker' | 'Deputy Speaker' | 'Secretary General' | 'Treasurer';
+  term: string;
+  status: 'Current' | 'Former';
+  photoUrl?: string;
+  bio?: string;
+}
+
+interface GovernanceDocument {
+  id: string;
+  title: string;
+  type: 'Constitution' | 'Election Manual';
+  fileUrl: string;
+  version?: string;
+  updatedAt: any;
+}
+
+interface Notification {
+  id: string;
+  userId: string | null;
+  title: string;
+  message: string;
+  type: 'announcement' | 'status_update' | 'system';
+  read: boolean;
+  createdAt: any;
+}
+
 // --- Components ---
 
 export default function App() {
-  const { user, isAdmin, loading, login, logout } = useAuth();
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'students' | 'tracking' | 'upload' | 'media'>('dashboard');
+  const { user, isAdmin, loading, isLoggingIn, login, logout } = useAuth();
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'students' | 'tracking' | 'upload' | 'media' | 'leadership' | 'governance' | 'notifications'>('dashboard');
   const [students, setStudents] = useState<Student[]>([]);
   const [tracking, setTracking] = useState<Tracking[]>([]);
+  const [leaders, setLeaders] = useState<Leadership[]>([]);
+  const [governanceDocs, setGovernanceDocs] = useState<GovernanceDocument[]>([]);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
   const [isAuthReady, setIsAuthReady] = useState(false);
+  const [isSendingAnnouncement, setIsSendingAnnouncement] = useState(false);
+  const [isAddingLeader, setIsAddingLeader] = useState(false);
 
   useEffect(() => {
     if (!loading) {
@@ -102,11 +147,57 @@ export default function App() {
       setTracking(trackingData);
     }, (error) => handleFirestoreError(error));
 
+    const leadershipQuery = query(collection(db, 'leadership'), orderBy('term', 'desc'));
+    const unsubscribeLeadership = onSnapshot(leadershipQuery, (snapshot) => {
+      const leadershipData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Leadership));
+      setLeaders(leadershipData);
+    }, (error) => handleFirestoreError(error));
+
+    const governanceQuery = query(collection(db, 'governance'), orderBy('updatedAt', 'desc'));
+    const unsubscribeGovernance = onSnapshot(governanceQuery, (snapshot) => {
+      const governanceData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as GovernanceDocument));
+      setGovernanceDocs(governanceData);
+    }, (error) => handleFirestoreError(error));
+
+    const notificationsQuery = query(
+      collection(db, 'notifications'), 
+      where('userId', 'in', [null, user.uid]),
+      orderBy('createdAt', 'desc')
+    );
+    const unsubscribeNotifications = onSnapshot(notificationsQuery, (snapshot) => {
+      const notificationData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Notification));
+      setNotifications(notificationData);
+    }, (error) => handleFirestoreError(error));
+
     return () => {
       unsubscribeStudents();
       unsubscribeTracking();
+      unsubscribeLeadership();
+      unsubscribeGovernance();
+      unsubscribeNotifications();
     };
   }, [isAuthReady, user, isAdmin]);
+
+  // Toast for new notifications
+  useEffect(() => {
+    if (notifications.length > 0) {
+      const latest = notifications[0];
+      const isRecent = latest.createdAt?.toDate 
+        ? (Date.now() - latest.createdAt.toDate().getTime()) < 10000 
+        : true; // If it's a fresh serverTimestamp it might be null initially or very recent
+
+      if (!latest.read && isRecent) {
+        toast(latest.title, {
+          description: latest.message,
+          icon: latest.type === 'announcement' ? <Megaphone size={16} /> : <Bell size={16} />,
+          action: {
+            label: 'View',
+            onClick: () => setActiveTab('notifications')
+          }
+        });
+      }
+    }
+  }, [notifications]);
 
   if (loading) {
     return (
@@ -117,7 +208,7 @@ export default function App() {
   }
 
   if (!user) {
-    return <LoginScreen login={login} />;
+    return <LoginScreen login={login} isLoggingIn={isLoggingIn} />;
   }
 
   if (!isAdmin) {
@@ -139,11 +230,14 @@ export default function App() {
       {/* Sidebar */}
       <aside className="w-full md:w-64 bg-white border-r border-slate-200 flex flex-col">
         <div className="p-6">
-          <div className="flex items-center gap-3 mb-8">
-            <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-200">
-              <Users className="text-white w-6 h-6" />
+          <div className="flex items-center justify-between mb-8">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-200">
+                <Users className="text-white w-6 h-6" />
+              </div>
+              <h1 className="font-bold text-xl text-slate-900 tracking-tight leading-none">Fashoda Students<br/><span className="text-indigo-600 text-sm font-medium">Association in Rwanda</span></h1>
             </div>
-            <h1 className="font-bold text-xl text-slate-900 tracking-tight leading-none">Fashoda Student<br/><span className="text-indigo-600 text-sm font-medium">Rwanda (FSR)</span></h1>
+            <NotificationBell notifications={notifications} />
           </div>
           
           <nav className="space-y-1">
@@ -170,6 +264,24 @@ export default function App() {
               onClick={() => setActiveTab('media')} 
               icon={<ImageIcon size={18} />} 
               label="Graduation Media" 
+            />
+            <NavItem 
+              active={activeTab === 'leadership'} 
+              onClick={() => setActiveTab('leadership')} 
+              icon={<Award size={18} />} 
+              label="Leadership" 
+            />
+            <NavItem 
+              active={activeTab === 'governance'} 
+              onClick={() => setActiveTab('governance')} 
+              icon={<Shield size={18} />} 
+              label="Governance" 
+            />
+            <NavItem 
+              active={activeTab === 'notifications'} 
+              onClick={() => setActiveTab('notifications')} 
+              icon={<Bell size={18} />} 
+              label="Notifications" 
             />
             <NavItem 
               active={activeTab === 'upload'} 
@@ -206,7 +318,14 @@ export default function App() {
         <div className="max-w-6xl mx-auto">
           <AnimatePresence mode="wait">
             {activeTab === 'dashboard' && (
-              <Dashboard students={students} tracking={tracking} onNavigate={setActiveTab} />
+              <Dashboard 
+                students={students} 
+                tracking={tracking} 
+                notifications={notifications}
+                onNavigate={setActiveTab} 
+                onSendAnnouncement={() => setIsSendingAnnouncement(true)}
+                onAddLeader={() => setIsAddingLeader(true)}
+              />
             )}
             {activeTab === 'students' && (
               <StudentList students={students} />
@@ -217,19 +336,35 @@ export default function App() {
             {activeTab === 'media' && (
               <AllMediaGallery students={students} />
             )}
+            {activeTab === 'leadership' && (
+              <LeadershipSection leaders={leaders} />
+            )}
+            {activeTab === 'governance' && (
+              <GovernanceSection documents={governanceDocs} />
+            )}
+            {activeTab === 'notifications' && (
+              <NotificationsPage notifications={notifications} />
+            )}
             {activeTab === 'upload' && (
               <DataImport />
             )}
           </AnimatePresence>
         </div>
       </main>
+
+      {isSendingAnnouncement && (
+        <SendAnnouncementModal onClose={() => setIsSendingAnnouncement(false)} />
+      )}
+      {isAddingLeader && (
+        <AddLeaderModal onClose={() => setIsAddingLeader(false)} />
+      )}
     </div>
   );
 }
 
 // --- Sub-components ---
 
-function LoginScreen({ login }: { login: () => void }) {
+function LoginScreen({ login, isLoggingIn }: { login: () => void, isLoggingIn: boolean }) {
   return (
     <div className="min-h-screen bg-white flex flex-col md:flex-row overflow-hidden">
       <div className="flex-1 bg-indigo-600 p-12 flex flex-col justify-between relative overflow-hidden">
@@ -241,7 +376,7 @@ function LoginScreen({ login }: { login: () => void }) {
             <Users className="text-white w-6 h-6" />
           </div>
           <h1 className="text-5xl font-extrabold text-white mb-6 leading-tight tracking-tighter">
-            Fashoda Student<br/>Rwanda <span className="text-indigo-200">(FSR)</span>
+            Fashoda Students<br/>Association in <span className="text-indigo-200">Rwanda</span>
           </h1>
           <p className="text-indigo-100 text-lg max-w-sm font-medium leading-relaxed">
             A professional student management and tracking system designed for clarity and efficiency.
@@ -270,10 +405,15 @@ function LoginScreen({ login }: { login: () => void }) {
 
             <button 
               onClick={login}
-              className="w-full flex items-center justify-center gap-3 bg-slate-900 text-white py-4 px-4 rounded-2xl font-bold hover:bg-slate-800 transition-all active:scale-[0.98] shadow-xl shadow-slate-200"
+              disabled={isLoggingIn}
+              className="w-full flex items-center justify-center gap-3 bg-slate-900 text-white py-4 px-4 rounded-2xl font-bold hover:bg-slate-800 transition-all active:scale-[0.98] shadow-xl shadow-slate-200 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <img src="https://www.google.com/favicon.ico" alt="" className="w-5 h-5 brightness-0 invert" />
-              Continue with Google
+              {isLoggingIn ? (
+                <Loader2 className="animate-spin" size={20} />
+              ) : (
+                <img src="https://www.google.com/favicon.ico" alt="" className="w-5 h-5 brightness-0 invert" />
+              )}
+              {isLoggingIn ? 'Signing in...' : 'Continue with Google'}
             </button>
 
             <div className="mt-10 pt-8 border-t border-slate-100">
@@ -290,7 +430,7 @@ function LoginScreen({ login }: { login: () => void }) {
             </div>
           </div>
           <p className="mt-8 text-[10px] text-center text-slate-400 uppercase tracking-[0.2em] font-bold">
-            Powered by Fashoda Student Rwanda (FSR)
+            Powered by Fashoda Students Association in Rwanda
           </p>
         </div>
       </div>
@@ -535,13 +675,22 @@ function AllMediaGallery({ students }: { students: Student[] }) {
   );
 }
 
-function Dashboard({ students, tracking, onNavigate }: { students: Student[], tracking: Tracking[], onNavigate: (tab: 'dashboard' | 'students' | 'tracking' | 'upload' | 'media') => void }) {
+function Dashboard({ students, tracking, notifications, onNavigate, onSendAnnouncement, onAddLeader }: { 
+  students: Student[], 
+  tracking: Tracking[], 
+  notifications: Notification[],
+  onNavigate: (tab: 'dashboard' | 'students' | 'tracking' | 'upload' | 'media' | 'leadership' | 'governance' | 'notifications') => void,
+  onSendAnnouncement: () => void,
+  onAddLeader: () => void
+}) {
   const today = format(new Date(), 'yyyy-MM-dd');
   const todaysTracking = tracking.filter(a => a.date === today);
   const inRwandaCount = todaysTracking.filter(a => a.status === 'In Rwanda').length;
   const trackingRate = students.length > 0 
     ? Math.round((inRwandaCount / students.length) * 100) 
     : 0;
+
+  const latestAnnouncement = notifications.find(n => n.type === 'announcement');
 
   return (
     <motion.div 
@@ -553,7 +702,7 @@ function Dashboard({ students, tracking, onNavigate }: { students: Student[], tr
       <header className="flex flex-col md:flex-row md:items-end justify-between gap-6">
         <div>
           <h2 className="text-4xl font-extrabold text-slate-900 tracking-tight mb-2">Dashboard</h2>
-          <p className="text-slate-500 font-medium">Real-time overview of Fashoda Student Rwanda (FSR) student program</p>
+          <p className="text-slate-500 font-medium">Real-time overview of Fashoda Students Association in Rwanda student program</p>
         </div>
         <div className="bg-white px-5 py-3 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-3">
           <div className="w-8 h-8 bg-indigo-50 rounded-lg flex items-center justify-center">
@@ -565,6 +714,37 @@ function Dashboard({ students, tracking, onNavigate }: { students: Student[], tr
           </div>
         </div>
       </header>
+
+      {latestAnnouncement && (
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.98 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="bg-indigo-600 rounded-[2.5rem] p-8 text-white relative overflow-hidden shadow-2xl shadow-indigo-200"
+        >
+          <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full -mr-32 -mt-32 blur-3xl"></div>
+          <div className="relative z-10 flex flex-col md:flex-row items-center gap-8">
+            <div className="w-16 h-16 bg-white/20 backdrop-blur-md rounded-2xl flex items-center justify-center shrink-0 border border-white/20">
+              <Megaphone size={32} className="text-white" />
+            </div>
+            <div className="flex-1 text-center md:text-left">
+              <div className="flex items-center justify-center md:justify-start gap-2 mb-2">
+                <span className="px-3 py-1 bg-white/20 backdrop-blur-md rounded-full text-[10px] font-bold uppercase tracking-widest border border-white/10">Latest Announcement</span>
+                <span className="text-[10px] font-medium text-indigo-100 italic">
+                  {format(new Date(latestAnnouncement.createdAt?.toDate ? latestAnnouncement.createdAt.toDate() : latestAnnouncement.createdAt), 'MMMM d, yyyy')}
+                </span>
+              </div>
+              <h3 className="text-2xl font-bold mb-2">{latestAnnouncement.title}</h3>
+              <p className="text-indigo-100 leading-relaxed max-w-2xl">{latestAnnouncement.message}</p>
+            </div>
+            <button 
+              onClick={() => onNavigate('notifications')}
+              className="px-8 py-4 bg-white text-indigo-600 rounded-2xl font-bold hover:bg-indigo-50 transition-all active:scale-95 shadow-lg"
+            >
+              View All Alerts
+            </button>
+          </div>
+        </motion.div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard 
@@ -585,15 +765,16 @@ function Dashboard({ students, tracking, onNavigate }: { students: Student[], tr
         />
         <div className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm flex flex-col justify-between group hover:border-indigo-200 transition-all">
           <div>
-            <p className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-4">Quick Action</p>
-            <h3 className="text-xl font-bold text-slate-900 mb-2">Daily Tracking</h3>
-            <p className="text-sm text-slate-500 mb-6">Update student status for today's session.</p>
+            <p className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-4">Announcements</p>
+            <h3 className="text-xl font-bold text-slate-900 mb-2">Broadcast</h3>
+            <p className="text-sm text-slate-500 mb-6">Send real-time updates to all students.</p>
           </div>
           <button 
-            onClick={() => onNavigate('tracking')}
-            className="w-full bg-slate-900 text-white py-3 rounded-xl font-bold text-sm hover:bg-slate-800 transition-all active:scale-95"
+            onClick={onSendAnnouncement}
+            className="w-full bg-amber-600 text-white py-3 rounded-xl font-bold text-sm hover:bg-amber-700 transition-all active:scale-95 flex items-center justify-center gap-2"
           >
-            Go to Tracking
+            <Megaphone size={16} />
+            Send Announcement
           </button>
         </div>
         <div className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm flex flex-col justify-between group hover:border-indigo-200 transition-all">
@@ -615,6 +796,28 @@ function Dashboard({ students, tracking, onNavigate }: { students: Student[], tr
             >
               <Plus size={14} />
               Upload
+            </button>
+          </div>
+        </div>
+        <div className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm flex flex-col justify-between group hover:border-indigo-200 transition-all">
+          <div>
+            <p className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-4">Leadership</p>
+            <h3 className="text-xl font-bold text-slate-900 mb-2">Executive</h3>
+            <p className="text-sm text-slate-500 mb-6">Manage former and current association leaders.</p>
+          </div>
+          <div className="flex gap-2">
+            <button 
+              onClick={() => onNavigate('leadership')}
+              className="flex-1 bg-slate-50 text-slate-600 py-3 rounded-xl font-bold text-sm hover:bg-slate-100 transition-all active:scale-95"
+            >
+              View List
+            </button>
+            <button 
+              onClick={onAddLeader}
+              className="flex-1 bg-indigo-600 text-white py-3 rounded-xl font-bold text-sm hover:bg-indigo-700 transition-all active:scale-95 flex items-center justify-center gap-2"
+            >
+              <Plus size={14} />
+              Add Leader
             </button>
           </div>
         </div>
@@ -716,7 +919,7 @@ function Dashboard({ students, tracking, onNavigate }: { students: Student[], tr
             <div>
               <h3 className="text-2xl font-bold mb-4">Community Impact</h3>
               <p className="text-indigo-200 text-sm leading-relaxed mb-8">
-                Your dedication to tracking and managing students helps Fashoda Student Rwanda (FSR) grow and thrive.
+                Your dedication to tracking and managing students helps Fashoda Students Association in Rwanda grow and thrive.
               </p>
               
               <div className="space-y-6">
@@ -778,43 +981,56 @@ function StatCard({ label, value, subValue, icon, trend, color }: { label: strin
 
 function GraduationGallery({ student, onClose }: { student: Student, onClose: () => void }) {
   const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState(0);
   const [media, setMedia] = useState<GraduationMedia[]>(student.graduationMedia || []);
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>, type: 'image' | 'video' | 'audio') => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = Array.from(e.target.files || []) as File[];
+    if (files.length === 0) return;
 
     setUploading(true);
+    setProgress(0);
+    
     try {
-      const storageRef = ref(storage, `graduation/${student.id}/${Date.now()}_${file.name}`);
-      await uploadBytes(storageRef, file);
-      const url = await getDownloadURL(storageRef);
+      const uploadPromises = files.map(async (file: File) => {
+        const storageRef = ref(storage, `graduation/${student.id}/${Date.now()}_${file.name}`);
+        const uploadTask = uploadBytesResumable(storageRef, file);
 
-      const newMedia: GraduationMedia = {
-        type,
-        url,
-        name: file.name,
-        uploadedAt: new Date().toISOString()
-      };
+        return new Promise<GraduationMedia>((resolve, reject) => {
+          uploadTask.on('state_changed', 
+            (snapshot) => {
+              const p = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+              setProgress(p);
+            }, 
+            (error) => reject(error), 
+            async () => {
+              const url = await getDownloadURL(uploadTask.snapshot.ref);
+              resolve({
+                type,
+                url,
+                name: file.name,
+                uploadedAt: new Date().toISOString()
+              });
+            }
+          );
+        });
+      });
 
-      const updatedMedia = [...media, newMedia];
+      const results = await Promise.all(uploadPromises);
+      const updatedMedia = [...media, ...results];
+      
       await updateDoc(doc(db, 'students', student.id), {
         graduationMedia: updatedMedia
       });
 
       setMedia(updatedMedia);
-      toast.success('Media uploaded successfully');
+      toast.success(`Successfully uploaded ${results.length} ${type}${results.length > 1 ? 's' : ''}`);
     } catch (error: any) {
       console.error('Storage Error:', error);
-      if (error.code === 'storage/retry-limit-exceeded') {
-        toast.error('Connection to storage failed. Please check your internet or try again later.');
-      } else if (error.code === 'storage/unauthorized') {
-        toast.error('Permission denied. Please log in again.');
-      } else {
-        toast.error(`Upload failed: ${error.message || 'Unknown error'}`);
-      }
+      toast.error(`Upload failed: ${error.message || 'Unknown error'}`);
     } finally {
       setUploading(false);
+      setProgress(0);
     }
   };
 
@@ -860,21 +1076,21 @@ function GraduationGallery({ student, onClose }: { student: Student, onClose: ()
         <div className="flex-1 overflow-y-auto p-8">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
             <label className="relative group cursor-pointer">
-              <input type="file" accept="image/*" className="hidden" onChange={(e) => handleUpload(e, 'image')} disabled={uploading} />
+              <input type="file" multiple accept="image/*" className="hidden" onChange={(e) => handleUpload(e, 'image')} disabled={uploading} />
               <div className="h-32 rounded-3xl border-2 border-dashed border-slate-200 flex flex-col items-center justify-center gap-2 group-hover:border-indigo-500 group-hover:bg-indigo-50/30 transition-all">
                 <ImageIcon className="text-slate-400 group-hover:text-indigo-600" size={24} />
-                <span className="text-xs font-bold text-slate-500 group-hover:text-indigo-600 uppercase tracking-widest">Add Photo</span>
+                <span className="text-xs font-bold text-slate-500 group-hover:text-indigo-600 uppercase tracking-widest">Add Photos</span>
               </div>
             </label>
             <label className="relative group cursor-pointer">
-              <input type="file" accept="video/*" className="hidden" onChange={(e) => handleUpload(e, 'video')} disabled={uploading} />
+              <input type="file" multiple accept="video/*" className="hidden" onChange={(e) => handleUpload(e, 'video')} disabled={uploading} />
               <div className="h-32 rounded-3xl border-2 border-dashed border-slate-200 flex flex-col items-center justify-center gap-2 group-hover:border-indigo-500 group-hover:bg-indigo-50/30 transition-all">
                 <Video className="text-slate-400 group-hover:text-indigo-600" size={24} />
-                <span className="text-xs font-bold text-slate-500 group-hover:text-indigo-600 uppercase tracking-widest">Add Video</span>
+                <span className="text-xs font-bold text-slate-500 group-hover:text-indigo-600 uppercase tracking-widest">Add Videos</span>
               </div>
             </label>
             <label className="relative group cursor-pointer">
-              <input type="file" accept="audio/*" className="hidden" onChange={(e) => handleUpload(e, 'audio')} disabled={uploading} />
+              <input type="file" multiple accept="audio/*" className="hidden" onChange={(e) => handleUpload(e, 'audio')} disabled={uploading} />
               <div className="h-32 rounded-3xl border-2 border-dashed border-slate-200 flex flex-col items-center justify-center gap-2 group-hover:border-indigo-500 group-hover:bg-indigo-50/30 transition-all">
                 <Music className="text-slate-400 group-hover:text-indigo-600" size={24} />
                 <span className="text-xs font-bold text-slate-500 group-hover:text-indigo-600 uppercase tracking-widest">Add Audio</span>
@@ -883,9 +1099,21 @@ function GraduationGallery({ student, onClose }: { student: Student, onClose: ()
           </div>
 
           {uploading && (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="animate-spin text-indigo-600" size={32} />
-              <span className="ml-3 font-bold text-slate-600">Uploading memory...</span>
+            <div className="mb-12">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <Loader2 className="animate-spin text-indigo-600" size={20} />
+                  <span className="font-bold text-slate-600 text-sm">Uploading memories...</span>
+                </div>
+                <span className="text-xs font-bold text-indigo-600">{Math.round(progress)}%</span>
+              </div>
+              <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+                <motion.div 
+                  className="h-full bg-indigo-600"
+                  initial={{ width: 0 }}
+                  animate={{ width: `${progress}%` }}
+                />
+              </div>
             </div>
           )}
 
@@ -1261,6 +1489,18 @@ function TrackingTracker({ students, tracking }: { students: Student[], tracking
           markedBy: auth.currentUser?.uid
         });
       }
+
+      // Add notification
+      const student = students.find(s => s.id === studentId);
+      await addDoc(collection(db, 'notifications'), {
+        userId: null,
+        title: 'Status Update',
+        message: `${student?.name}'s status was updated to ${status} for ${selectedDate}`,
+        type: 'status_update',
+        read: false,
+        createdAt: serverTimestamp()
+      });
+
       toast.success(`Marked as ${status}`);
     } catch (error) {
       handleFirestoreError(error);
@@ -1297,6 +1537,17 @@ function TrackingTracker({ students, tracking }: { students: Student[], tracking
       }
       
       await batch.commit();
+      
+      // Add notification for bulk update
+      await addDoc(collection(db, 'notifications'), {
+        userId: null,
+        title: 'Bulk Status Update',
+        message: `${idsToMark.length} students were marked as ${status} for ${selectedDate}`,
+        type: 'status_update',
+        read: false,
+        createdAt: serverTimestamp()
+      });
+
       setSelectedStudentIds(new Set());
       toast.success(`Bulk marked ${idsToMark.length} students as ${status}`);
     } catch (error) {
@@ -1800,6 +2051,919 @@ function DataImport() {
           <p className="text-sm text-indigo-800 opacity-80">
             The system automatically looks for columns named 'Name', 'ID', and 'Email' to make importing seamless.
           </p>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+function LeadershipSection({ leaders }: { leaders: Leadership[] }) {
+  const [isAdding, setIsAdding] = useState(false);
+  const [expandedStatus, setExpandedStatus] = useState<'Current' | 'Former' | null>('Current');
+
+  const currentLeaders = leaders.filter(l => l.status === 'Current');
+  const formerLeaders = leaders.filter(l => l.status === 'Former');
+
+  return (
+    <motion.div 
+      initial={{ opacity: 0, x: 20 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: -20 }}
+      className="space-y-8"
+    >
+      <header className="flex flex-col md:flex-row md:items-end justify-between gap-6">
+        <div>
+          <h2 className="text-4xl font-extrabold text-slate-900 tracking-tight mb-2">Leadership</h2>
+          <p className="text-slate-500 font-medium">Former and current leaders of the association</p>
+        </div>
+        <button 
+          onClick={() => setIsAdding(true)}
+          className="bg-indigo-600 text-white px-6 py-3 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-200 active:scale-95"
+        >
+          <Plus size={18} />
+          Add Leader
+        </button>
+      </header>
+
+      <div className="space-y-6">
+        {/* Current Executive */}
+        <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm overflow-hidden">
+          <button 
+            onClick={() => setExpandedStatus(expandedStatus === 'Current' ? null : 'Current')}
+            className="w-full p-8 flex items-center justify-between hover:bg-slate-50 transition-colors"
+          >
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 bg-indigo-100 rounded-2xl flex items-center justify-center text-indigo-600">
+                <Award size={24} />
+              </div>
+              <div className="text-left">
+                <h3 className="text-xl font-bold text-slate-900">Current Executive</h3>
+                <p className="text-sm text-slate-500">{currentLeaders.length} active leaders</p>
+              </div>
+            </div>
+            {expandedStatus === 'Current' ? <ChevronUp size={24} className="text-slate-400" /> : <ChevronDown size={24} className="text-slate-400" />}
+          </button>
+          
+          <AnimatePresence>
+            {expandedStatus === 'Current' && (
+              <motion.div 
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                className="overflow-hidden"
+              >
+                <div className="p-8 pt-0 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {currentLeaders.map(leader => (
+                    <LeaderCard key={leader.id} leader={leader} />
+                  ))}
+                  {currentLeaders.length === 0 && (
+                    <p className="col-span-full text-center py-10 text-slate-400 italic">No current leaders listed.</p>
+                  )}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
+        {/* Former Executive */}
+        <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm overflow-hidden">
+          <button 
+            onClick={() => setExpandedStatus(expandedStatus === 'Former' ? null : 'Former')}
+            className="w-full p-8 flex items-center justify-between hover:bg-slate-50 transition-colors"
+          >
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 bg-slate-100 rounded-2xl flex items-center justify-center text-slate-600">
+                <History size={24} />
+              </div>
+              <div className="text-left">
+                <h3 className="text-xl font-bold text-slate-900">Former Executive</h3>
+                <p className="text-sm text-slate-500">{formerLeaders.length} past leaders</p>
+              </div>
+            </div>
+            {expandedStatus === 'Former' ? <ChevronUp size={24} className="text-slate-400" /> : <ChevronDown size={24} className="text-slate-400" />}
+          </button>
+          
+          <AnimatePresence>
+            {expandedStatus === 'Former' && (
+              <motion.div 
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                className="overflow-hidden"
+              >
+                <div className="p-8 pt-0 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {formerLeaders.map(leader => (
+                    <LeaderCard key={leader.id} leader={leader} />
+                  ))}
+                  {formerLeaders.length === 0 && (
+                    <p className="col-span-full text-center py-10 text-slate-400 italic">No former leaders listed.</p>
+                  )}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      </div>
+
+      {isAdding && (
+        <AddLeaderModal onClose={() => setIsAdding(false)} />
+      )}
+    </motion.div>
+  );
+}
+
+function LeaderCard({ leader }: { leader: Leadership, key?: React.Key }) {
+  return (
+    <div className="bg-slate-50 rounded-3xl p-6 border border-slate-100 group hover:border-indigo-200 transition-all">
+      <div className="flex items-center gap-4 mb-4">
+        <div className="w-16 h-16 bg-white rounded-2xl overflow-hidden border border-slate-200 shadow-sm flex items-center justify-center">
+          {leader.photoUrl ? (
+            <img src={leader.photoUrl} alt={leader.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+          ) : (
+            <Users size={32} className="text-slate-200" />
+          )}
+        </div>
+        <div>
+          <h4 className="font-bold text-slate-900">{leader.name}</h4>
+          <p className="text-xs font-bold text-indigo-600 uppercase tracking-widest">{leader.position}</p>
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{leader.term}</p>
+        </div>
+      </div>
+      {leader.bio && (
+        <p className="text-xs text-slate-500 leading-relaxed line-clamp-3">
+          {leader.bio}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function GovernanceSection({ documents }: { documents: GovernanceDocument[] }) {
+  const [isAdding, setIsAdding] = useState(false);
+
+  return (
+    <motion.div 
+      initial={{ opacity: 0, x: 20 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: -20 }}
+      className="space-y-8"
+    >
+      <header className="flex flex-col md:flex-row md:items-end justify-between gap-6">
+        <div>
+          <h2 className="text-4xl font-extrabold text-slate-900 tracking-tight mb-2">Governance</h2>
+          <p className="text-slate-500 font-medium">Official Constitutions and Election Manuals</p>
+        </div>
+        <button 
+          onClick={() => setIsAdding(true)}
+          className="bg-indigo-600 text-white px-6 py-3 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-200 active:scale-95"
+        >
+          <Plus size={18} />
+          Upload Document
+        </button>
+      </header>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+        {/* Constitutions */}
+        <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm">
+          <div className="flex items-center gap-4 mb-8">
+            <div className="w-12 h-12 bg-emerald-100 rounded-2xl flex items-center justify-center text-emerald-600">
+              <Shield size={24} />
+            </div>
+            <div>
+              <h3 className="text-xl font-bold text-slate-900">Constitutions</h3>
+              <p className="text-sm text-slate-500">Foundational rules and principles</p>
+            </div>
+          </div>
+          <div className="space-y-4">
+            {documents.filter(d => d.type === 'Constitution').map(doc => (
+              <DocumentRow key={doc.id} doc={doc} />
+            ))}
+            {documents.filter(d => d.type === 'Constitution').length === 0 && (
+              <p className="text-center py-10 text-slate-400 italic">No constitutions uploaded.</p>
+            )}
+          </div>
+        </div>
+
+        {/* Election Manuals */}
+        <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm">
+          <div className="flex items-center gap-4 mb-8">
+            <div className="w-12 h-12 bg-amber-100 rounded-2xl flex items-center justify-center text-amber-600">
+              <FileText size={24} />
+            </div>
+            <div>
+              <h3 className="text-xl font-bold text-slate-900">Election Manuals</h3>
+              <p className="text-sm text-slate-500">Guidelines for democratic processes</p>
+            </div>
+          </div>
+          <div className="space-y-4">
+            {documents.filter(d => d.type === 'Election Manual').map(doc => (
+              <DocumentRow key={doc.id} doc={doc} />
+            ))}
+            {documents.filter(d => d.type === 'Election Manual').length === 0 && (
+              <p className="text-center py-10 text-slate-400 italic">No election manuals uploaded.</p>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {isAdding && (
+        <AddGovernanceModal onClose={() => setIsAdding(false)} />
+      )}
+    </motion.div>
+  );
+}
+
+function DocumentRow({ doc }: { doc: GovernanceDocument, key?: React.Key }) {
+  return (
+    <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100 group hover:border-indigo-200 transition-all">
+      <div className="flex items-center gap-4 overflow-hidden">
+        <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-slate-400 group-hover:text-indigo-600 transition-colors shadow-sm">
+          <FileText size={20} />
+        </div>
+        <div className="overflow-hidden">
+          <p className="text-sm font-bold text-slate-900 truncate">{doc.title}</p>
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+            Version {doc.version || '1.0'} • {format(new Date(doc.updatedAt), 'MMM d, yyyy')}
+          </p>
+        </div>
+      </div>
+      <a 
+        href={doc.fileUrl} 
+        target="_blank" 
+        rel="noopener noreferrer"
+        className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-white rounded-xl transition-all shadow-sm"
+      >
+        <Download size={18} />
+      </a>
+    </div>
+  );
+}
+
+function AddLeaderModal({ onClose, onSuccess }: { onClose: () => void, onSuccess?: () => void }) {
+  const [loading, setLoading] = useState(false);
+  const [isSuccess, setIsSuccess] = useState(false);
+  const [formData, setFormData] = useState({
+    name: '',
+    position: 'President',
+    term: '',
+    status: 'Current',
+    bio: ''
+  });
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      await addDoc(collection(db, 'leadership'), {
+        ...formData,
+        createdAt: serverTimestamp()
+      });
+      setIsSuccess(true);
+      toast.success('Leader added successfully');
+      if (onSuccess) onSuccess();
+    } catch (error) {
+      handleFirestoreError(error);
+      setLoading(false);
+    }
+  };
+
+  if (isSuccess) {
+    return (
+      <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[70] flex items-center justify-center p-4">
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="bg-white rounded-[2.5rem] w-full max-w-md p-12 text-center shadow-2xl"
+        >
+          <div className="w-20 h-20 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-6 text-emerald-600">
+            <CheckCircle2 size={40} />
+          </div>
+          <h3 className="text-2xl font-bold text-slate-900 mb-2">Leader Added!</h3>
+          <p className="text-slate-500 mb-8">The leadership roster has been updated successfully.</p>
+          <div className="space-y-3">
+            <button 
+              onClick={() => {
+                setIsSuccess(false);
+                setFormData({
+                  name: '',
+                  position: 'President',
+                  term: '',
+                  status: 'Current',
+                  bio: ''
+                });
+              }}
+              className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-bold hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-200 active:scale-95"
+            >
+              Add Another Leader
+            </button>
+            <button 
+              onClick={onClose}
+              className="w-full bg-slate-100 text-slate-600 py-4 rounded-2xl font-bold hover:bg-slate-200 transition-all active:scale-95"
+            >
+              Return to List
+            </button>
+          </div>
+        </motion.div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[70] flex items-center justify-center p-4">
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="bg-white rounded-[2.5rem] w-full max-w-md overflow-hidden shadow-2xl"
+      >
+        <div className="p-8 border-b border-slate-100 flex items-center justify-between">
+          <h3 className="text-2xl font-bold text-slate-900">Add Leader</h3>
+          <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-xl transition-all">
+            <X size={20} className="text-slate-400" />
+          </button>
+        </div>
+        <form onSubmit={handleSubmit} className="p-8 space-y-6">
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Full Name</label>
+            <input 
+              required
+              type="text" 
+              className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+              value={formData.name}
+              onChange={e => setFormData({...formData, name: e.target.value})}
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Position</label>
+              <select 
+                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                value={formData.position}
+                onChange={e => setFormData({...formData, position: e.target.value as any})}
+              >
+                <option>President</option>
+                <option>Deputy President</option>
+                <option>Speaker</option>
+                <option>Deputy Speaker</option>
+                <option>Secretary General</option>
+                <option>Treasurer</option>
+              </select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Status</label>
+              <select 
+                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                value={formData.status}
+                onChange={e => setFormData({...formData, status: e.target.value as any})}
+              >
+                <option>Current</option>
+                <option>Former</option>
+              </select>
+            </div>
+          </div>
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Term (e.g. 2023-2024)</label>
+            <input 
+              required
+              type="text" 
+              className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+              value={formData.term}
+              onChange={e => setFormData({...formData, term: e.target.value})}
+            />
+          </div>
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Bio (Optional)</label>
+            <textarea 
+              className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 h-24 resize-none"
+              value={formData.bio}
+              onChange={e => setFormData({...formData, bio: e.target.value})}
+            />
+          </div>
+          <button 
+            disabled={loading}
+            className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-bold hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-200 active:scale-95 disabled:opacity-50"
+          >
+            {loading ? 'Adding...' : 'Save Leader'}
+          </button>
+        </form>
+      </motion.div>
+    </div>
+  );
+}
+
+function AddGovernanceModal({ onClose }: { onClose: () => void }) {
+  const [loading, setLoading] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [file, setFile] = useState<File | null>(null);
+  const [formData, setFormData] = useState({
+    title: '',
+    type: 'Constitution' as const,
+    version: ''
+  });
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files?.[0]) {
+      const selectedFile = e.target.files[0];
+      setFile(selectedFile);
+      // Auto-fill title if empty
+      if (!formData.title) {
+        setFormData(prev => ({ ...prev, title: selectedFile.name.split('.')[0] }));
+      }
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!file) {
+      toast.error('Please select a document to upload');
+      return;
+    }
+
+    setLoading(true);
+    setProgress(0);
+    try {
+      // 1. Upload to Storage
+      const storageRef = ref(storage, `governance/${Date.now()}_${file.name}`);
+      const uploadTask = uploadBytesResumable(storageRef, file);
+
+      const downloadUrl = await new Promise<string>((resolve, reject) => {
+        uploadTask.on('state_changed', 
+          (snapshot) => {
+            const p = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+            setProgress(p);
+          }, 
+          (error) => reject(error), 
+          async () => {
+            const url = await getDownloadURL(uploadTask.snapshot.ref);
+            resolve(url);
+          }
+        );
+      });
+
+      // 2. Save to Firestore
+      await addDoc(collection(db, 'governance'), {
+        ...formData,
+        fileUrl: downloadUrl,
+        updatedAt: serverTimestamp()
+      });
+
+      toast.success('Document uploaded successfully');
+      onClose();
+    } catch (error) {
+      handleFirestoreError(error);
+    } finally {
+      setLoading(false);
+      setProgress(0);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[70] flex items-center justify-center p-4">
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="bg-white rounded-[2.5rem] w-full max-w-md overflow-hidden shadow-2xl"
+      >
+        <div className="p-8 border-b border-slate-100 flex items-center justify-between">
+          <h3 className="text-2xl font-bold text-slate-900">Upload Document</h3>
+          <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-xl transition-all">
+            <X size={20} className="text-slate-400" />
+          </button>
+        </div>
+        <form onSubmit={handleSubmit} className="p-8 space-y-6">
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Select Document</label>
+            <div className="relative group">
+              <input 
+                type="file" 
+                accept=".pdf,.doc,.docx,.txt"
+                onChange={handleFileChange}
+                className="hidden" 
+                id="gov-file-upload"
+              />
+              <label 
+                htmlFor="gov-file-upload"
+                className={`w-full flex flex-col items-center justify-center p-8 border-2 border-dashed rounded-2xl cursor-pointer transition-all ${
+                  file ? 'border-emerald-200 bg-emerald-50/30' : 'border-slate-200 hover:border-indigo-500 hover:bg-indigo-50/30'
+                }`}
+              >
+                <Upload className={file ? 'text-emerald-500' : 'text-slate-400'} size={24} />
+                <span className={`mt-2 text-xs font-bold uppercase tracking-widest ${file ? 'text-emerald-600' : 'text-slate-500'}`}>
+                  {file ? file.name : 'Choose File'}
+                </span>
+                <p className="mt-1 text-[10px] text-slate-400">PDF, DOCX, or TXT</p>
+              </label>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Document Title</label>
+            <input 
+              required
+              type="text" 
+              className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+              value={formData.title}
+              onChange={e => setFormData({...formData, title: e.target.value})}
+            />
+          </div>
+          
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Type</label>
+              <select 
+                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                value={formData.type}
+                onChange={e => setFormData({...formData, type: e.target.value as any})}
+              >
+                <option value="Constitution">Constitution</option>
+                <option value="Election Manual">Election Manual</option>
+              </select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Version</label>
+              <input 
+                type="text" 
+                placeholder="e.g. 2.1"
+                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                value={formData.version}
+                onChange={e => setFormData({...formData, version: e.target.value})}
+              />
+            </div>
+          </div>
+
+          <button 
+            disabled={loading}
+            className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-bold hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-200 active:scale-95 disabled:opacity-50 flex flex-col items-center justify-center gap-2"
+          >
+            {loading ? (
+              <>
+                <div className="flex items-center gap-2">
+                  <Loader2 className="animate-spin" size={20} />
+                  <span>Uploading {Math.round(progress)}%</span>
+                </div>
+                <div className="w-full h-1 bg-white/20 rounded-full overflow-hidden mt-1">
+                  <motion.div 
+                    className="h-full bg-white"
+                    initial={{ width: 0 }}
+                    animate={{ width: `${progress}%` }}
+                  />
+                </div>
+              </>
+            ) : (
+              'Save Document'
+            )}
+          </button>
+        </form>
+      </motion.div>
+    </div>
+  );
+}
+
+function NotificationBell({ notifications }: { notifications: Notification[] }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const unreadCount = notifications.filter(n => !n.read).length;
+
+  const markAsRead = async (id: string) => {
+    try {
+      await updateDoc(doc(db, 'notifications', id), { read: true });
+    } catch (error) {
+      handleFirestoreError(error);
+    }
+  };
+
+  const markAllAsRead = async () => {
+    const unread = notifications.filter(n => !n.read);
+    const batch = writeBatch(db);
+    unread.forEach(n => {
+      batch.update(doc(db, 'notifications', n.id), { read: true });
+    });
+    try {
+      await batch.commit();
+    } catch (error) {
+      handleFirestoreError(error);
+    }
+  };
+
+  return (
+    <div className="relative">
+      <button 
+        onClick={() => setIsOpen(true)}
+        className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all relative"
+      >
+        <Bell size={20} />
+        {unreadCount > 0 && (
+          <span className="absolute top-1.5 right-1.5 w-4 h-4 bg-red-500 text-white text-[10px] font-bold flex items-center justify-center rounded-full border-2 border-white">
+            {unreadCount}
+          </span>
+        )}
+      </button>
+
+      <AnimatePresence>
+        {isOpen && (
+          <>
+            {/* Backdrop */}
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsOpen(false)}
+              className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100]"
+            />
+            
+            {/* Slide-over Panel */}
+            <motion.div 
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              className="fixed top-0 right-0 h-full w-full max-w-md bg-white shadow-2xl z-[101] flex flex-col"
+            >
+              <div className="p-8 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                <div>
+                  <h3 className="text-2xl font-extrabold text-slate-900 tracking-tight">Notifications</h3>
+                  <p className="text-sm text-slate-500 font-medium">You have {unreadCount} unread messages</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  {unreadCount > 0 && (
+                    <button 
+                      onClick={markAllAsRead}
+                      className="text-[10px] font-bold text-indigo-600 uppercase tracking-widest hover:bg-indigo-50 px-3 py-2 rounded-lg transition-all"
+                    >
+                      Mark all read
+                    </button>
+                  )}
+                  <button 
+                    onClick={() => setIsOpen(false)}
+                    className="p-2 hover:bg-white rounded-xl transition-all border border-transparent hover:border-slate-200"
+                  >
+                    <X size={20} className="text-slate-400" />
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                {notifications.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center h-full text-center p-8">
+                    <div className="w-20 h-20 bg-slate-50 rounded-[2rem] flex items-center justify-center mb-6 text-slate-200">
+                      <Bell size={40} />
+                    </div>
+                    <h4 className="text-lg font-bold text-slate-900 mb-2">All caught up!</h4>
+                    <p className="text-slate-500">No new notifications at the moment.</p>
+                  </div>
+                ) : (
+                  notifications.map(notification => (
+                    <motion.div 
+                      layout
+                      key={notification.id} 
+                      className={`p-6 rounded-3xl transition-all cursor-pointer relative group border ${
+                        !notification.read 
+                          ? 'bg-indigo-50/30 border-indigo-100 shadow-sm' 
+                          : 'bg-white border-slate-50 hover:border-slate-200'
+                      }`}
+                      onClick={() => !notification.read && markAsRead(notification.id)}
+                    >
+                      <div className="flex gap-4">
+                        <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 shadow-sm ${
+                          notification.type === 'announcement' ? 'bg-amber-100 text-amber-600' :
+                          notification.type === 'status_update' ? 'bg-emerald-100 text-emerald-600' :
+                          'bg-indigo-100 text-indigo-600'
+                        }`}>
+                          {notification.type === 'announcement' ? <Megaphone size={20} /> :
+                           notification.type === 'status_update' ? <CheckCircle2 size={20} /> :
+                           <Info size={20} />}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between mb-1">
+                            <p className="text-sm font-bold text-slate-900 truncate">{notification.title}</p>
+                            {!notification.read && (
+                              <span className="w-2 h-2 bg-indigo-600 rounded-full"></span>
+                            )}
+                          </div>
+                          <p className="text-sm text-slate-600 leading-relaxed mb-3">{notification.message}</p>
+                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                            {format(new Date(notification.createdAt?.toDate ? notification.createdAt.toDate() : notification.createdAt), 'MMM d, h:mm a')}
+                          </p>
+                        </div>
+                      </div>
+                    </motion.div>
+                  ))
+                )}
+              </div>
+              
+              <div className="p-6 border-t border-slate-100 bg-slate-50/30">
+                <button 
+                  onClick={() => setIsOpen(false)}
+                  className="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold hover:bg-slate-800 transition-all active:scale-95 shadow-xl shadow-slate-200"
+                >
+                  Close Panel
+                </button>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+function SendAnnouncementModal({ onClose }: { onClose: () => void }) {
+  const [loading, setLoading] = useState(false);
+  const [formData, setFormData] = useState({
+    title: '',
+    message: ''
+  });
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      await addDoc(collection(db, 'notifications'), {
+        userId: null,
+        title: formData.title,
+        message: formData.message,
+        type: 'announcement',
+        read: false,
+        createdAt: serverTimestamp()
+      });
+      toast.success('Announcement sent to all users');
+      onClose();
+    } catch (error) {
+      handleFirestoreError(error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[70] flex items-center justify-center p-4">
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="bg-white rounded-[2.5rem] w-full max-w-md overflow-hidden shadow-2xl"
+      >
+        <div className="p-8 border-b border-slate-100 flex items-center justify-between bg-amber-50/50">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-amber-100 rounded-xl flex items-center justify-center text-amber-600">
+              <Megaphone size={20} />
+            </div>
+            <h3 className="text-2xl font-bold text-slate-900">Send Announcement</h3>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-xl transition-all">
+            <X size={20} className="text-slate-400" />
+          </button>
+        </div>
+        <form onSubmit={handleSubmit} className="p-8 space-y-6">
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Announcement Title</label>
+            <input 
+              required
+              type="text" 
+              placeholder="e.g. Upcoming General Meeting"
+              className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+              value={formData.title}
+              onChange={e => setFormData({...formData, title: e.target.value})}
+            />
+          </div>
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Message</label>
+            <textarea 
+              required
+              className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 h-32 resize-none"
+              placeholder="Enter the details of your announcement..."
+              value={formData.message}
+              onChange={e => setFormData({...formData, message: e.target.value})}
+            />
+          </div>
+          <button 
+            disabled={loading}
+            className="w-full bg-amber-600 text-white py-4 rounded-2xl font-bold hover:bg-amber-700 transition-all shadow-xl shadow-amber-200 active:scale-95 disabled:opacity-50"
+          >
+            {loading ? 'Sending...' : 'Broadcast Announcement'}
+          </button>
+        </form>
+      </motion.div>
+    </div>
+  );
+}
+
+function NotificationsPage({ notifications }: { notifications: Notification[] }) {
+  const markAsRead = async (id: string) => {
+    try {
+      await updateDoc(doc(db, 'notifications', id), { read: true });
+    } catch (error) {
+      handleFirestoreError(error);
+    }
+  };
+
+  const markAllAsRead = async () => {
+    const unread = notifications.filter(n => !n.read);
+    const batch = writeBatch(db);
+    unread.forEach(n => {
+      batch.update(doc(db, 'notifications', n.id), { read: true });
+    });
+    try {
+      await batch.commit();
+    } catch (error) {
+      handleFirestoreError(error);
+    }
+  };
+
+  const deleteNotification = async (id: string) => {
+    if (!confirm('Delete this notification?')) return;
+    try {
+      await deleteDoc(doc(db, 'notifications', id));
+      toast.success('Notification deleted');
+    } catch (error) {
+      handleFirestoreError(error);
+    }
+  };
+
+  return (
+    <motion.div 
+      initial={{ opacity: 0, x: 20 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: -20 }}
+      className="space-y-8"
+    >
+      <header className="flex flex-col md:flex-row md:items-end justify-between gap-6">
+        <div>
+          <h2 className="text-4xl font-extrabold text-slate-900 tracking-tight mb-2">Notifications</h2>
+          <p className="text-slate-500 font-medium">Stay updated with the latest announcements and system alerts</p>
+        </div>
+        {notifications.some(n => !n.read) && (
+          <button 
+            onClick={markAllAsRead}
+            className="bg-indigo-600 text-white px-6 py-3 rounded-2xl font-bold flex items-center gap-2 hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-200 active:scale-95"
+          >
+            <Check size={18} />
+            Mark All as Read
+          </button>
+        )}
+      </header>
+
+      <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm overflow-hidden">
+        <div className="divide-y divide-slate-100">
+          {notifications.length === 0 ? (
+            <div className="p-20 text-center">
+              <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-6">
+                <Bell className="text-slate-200" size={40} />
+              </div>
+              <h3 className="text-xl font-bold text-slate-900 mb-2">No notifications yet</h3>
+              <p className="text-slate-500 max-w-xs mx-auto">When you receive announcements or updates, they will appear here.</p>
+            </div>
+          ) : (
+            notifications.map((notification) => (
+              <div 
+                key={notification.id} 
+                className={`p-8 transition-all flex flex-col md:flex-row gap-6 items-start group ${!notification.read ? 'bg-indigo-50/20' : ''}`}
+              >
+                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 shadow-sm ${
+                  notification.type === 'announcement' ? 'bg-amber-100 text-amber-600' :
+                  notification.type === 'status_update' ? 'bg-emerald-100 text-emerald-600' :
+                  'bg-indigo-100 text-indigo-600'
+                }`}>
+                  {notification.type === 'announcement' ? <Megaphone size={24} /> :
+                   notification.type === 'status_update' ? <CheckCircle2 size={24} /> :
+                   <Info size={24} />}
+                </div>
+                
+                <div className="flex-1 space-y-2">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <h4 className={`text-lg font-bold ${!notification.read ? 'text-slate-900' : 'text-slate-600'}`}>
+                      {notification.title}
+                    </h4>
+                    {!notification.read && (
+                      <span className="px-2 py-0.5 bg-indigo-600 text-white text-[10px] font-bold rounded-full uppercase tracking-widest">New</span>
+                    )}
+                    <span className="text-xs font-medium text-slate-400">
+                      {format(new Date(notification.createdAt?.toDate ? notification.createdAt.toDate() : notification.createdAt), 'MMMM d, yyyy • h:mm a')}
+                    </span>
+                  </div>
+                  <p className={`text-slate-600 leading-relaxed ${!notification.read ? 'font-medium' : ''}`}>
+                    {notification.message}
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2 md:opacity-0 group-hover:opacity-100 transition-opacity">
+                  {!notification.read && (
+                    <button 
+                      onClick={() => markAsRead(notification.id)}
+                      className="p-3 text-emerald-600 hover:bg-emerald-50 rounded-xl transition-all"
+                      title="Mark as read"
+                    >
+                      <Check size={20} />
+                    </button>
+                  )}
+                  <button 
+                    onClick={() => deleteNotification(notification.id)}
+                    className="p-3 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all"
+                    title="Delete"
+                  >
+                    <Trash2 size={20} />
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </div>
     </motion.div>

@@ -49,6 +49,47 @@
         "name": { "type": "string" }
       },
       "required": ["email", "role"]
+    },
+    "Leadership": {
+      "title": "Leadership",
+      "description": "Former and current leaders of the association",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "position": { "type": "string", "enum": ["President", "Deputy President", "Speaker", "Deputy Speaker", "Secretary General", "Treasurer"] },
+        "term": { "type": "string", "description": "e.g., 2023-2024" },
+        "status": { "type": "string", "enum": ["Current", "Former"] },
+        "photoUrl": { "type": "string" },
+        "bio": { "type": "string" }
+      },
+      "required": ["name", "position", "term", "status"]
+    },
+    "GovernanceDocument": {
+      "title": "Governance Document",
+      "description": "Official documents like Constitutions and Election Manuals",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "type": { "type": "string", "enum": ["Constitution", "Election Manual"] },
+        "fileUrl": { "type": "string" },
+        "version": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "type", "fileUrl", "updatedAt"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "A notification for a user or a general announcement",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Target user UID (null for announcements)" },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "type": { "type": "string", "enum": ["announcement", "status_update", "system"] },
+        "read": { "type": "boolean", "default": false },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "message", "type", "createdAt"]
     }
   },
   "firestore": {
@@ -63,6 +104,18 @@
     "/users/{userId}": {
       "schema": "User",
       "description": "Admin user profiles"
+    },
+    "/leadership/{leaderId}": {
+      "schema": "Leadership",
+      "description": "Collection of leaders"
+    },
+    "/governance/{docId}": {
+      "schema": "GovernanceDocument",
+      "description": "Official governance documents"
+    },
+    "/notifications/{notificationId}": {
+      "schema": "Notification",
+      "description": "Collection of notifications"
     }
   }
 }

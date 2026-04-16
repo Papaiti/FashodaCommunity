@@ -1,7 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
-import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
+import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject, uploadBytesResumable } from 'firebase/storage';
 import firebaseConfig from '../firebase-applet-config.json';
 
 // Initialize Firebase
@@ -17,7 +17,7 @@ storage.maxUploadRetryTime = 600000;
 
 console.log('Firebase Storage initialized with bucket:', firebaseConfig.storageBucket);
 
-export { ref, uploadBytes, getDownloadURL, deleteObject };
+export { ref, uploadBytes, getDownloadURL, deleteObject, uploadBytesResumable };
 
 // Connection test
 async function testConnection() {

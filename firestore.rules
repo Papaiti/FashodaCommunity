@@ -55,6 +55,12 @@ service cloud.firestore {
         );
     }
 
+    function isRecent(time) {
+      return time is timestamp && 
+             time > request.time - duration.value(5, 'm') && 
+             time < request.time + duration.value(5, 'm');
+    }
+
     function isValidEmail(email) {
       return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
     }
@@ -83,7 +89,7 @@ service cloud.firestore {
              (!('email' in data) || data.email == null || isValidEmail(data.email)) &&
              (!('graduationMedia' in data) || data.graduationMedia is list) &&
              data.createdAt is timestamp &&
-             data.createdBy == request.auth.uid;
+             data.createdBy is string;
     }
 
     function isValidTracking(data) {
@@ -93,7 +99,37 @@ service cloud.firestore {
              isValidDateString(data.date) &&
              data.status in ['In Rwanda', 'Traveled'] &&
              data.markedAt is timestamp &&
-             data.markedBy == request.auth.uid;
+             data.markedBy is string;
+    }
+
+    function isValidLeader(data) {
+      return data.keys().hasAll(['name', 'position', 'term', 'status', 'createdAt']) &&
+             data.keys().hasOnly(['name', 'position', 'term', 'status', 'photoUrl', 'bio', 'createdAt']) &&
+             data.name is string && data.name.size() > 0 &&
+             data.position in ['President', 'Deputy President', 'Speaker', 'Deputy Speaker', 'Secretary General', 'Treasurer'] &&
+             data.term is string &&
+             data.status in ['Current', 'Former'] &&
+             data.createdAt is timestamp;
+    }
+
+    function isValidGovernanceDoc(data) {
+      return data.keys().hasAll(['title', 'type', 'fileUrl', 'updatedAt']) &&
+             data.keys().hasOnly(['title', 'type', 'fileUrl', 'version', 'updatedAt']) &&
+             data.title is string && data.title.size() > 0 &&
+             data.type in ['Constitution', 'Election Manual'] &&
+             data.fileUrl is string &&
+             data.updatedAt is timestamp;
+    }
+
+    function isValidNotification(data) {
+      return data.keys().hasAll(['title', 'message', 'type', 'createdAt']) &&
+             data.keys().hasOnly(['userId', 'title', 'message', 'type', 'read', 'createdAt']) &&
+             data.title is string && data.title.size() > 0 &&
+             data.message is string && data.message.size() > 0 &&
+             data.type in ['announcement', 'status_update', 'system'] &&
+             (!('userId' in data) || data.userId == null || data.userId is string) &&
+             (!('read' in data) || data.read is bool) &&
+             data.createdAt is timestamp;
     }
 
     // ===============================================================
@@ -108,20 +144,36 @@ service cloud.firestore {
     }
 
     match /students/{studentId} {
-      allow read: if isAdmin();
+      allow read: if isAuthenticated(); 
       allow create: if isAdmin() && isValidStudent(request.resource.data);
-      allow update: if isAdmin() && isValidStudent(request.resource.data) && 
-                    request.resource.data.createdAt == resource.data.createdAt &&
-                    request.resource.data.createdBy == resource.data.createdBy;
+      allow update: if isAdmin() && isValidStudent(request.resource.data);
       allow delete: if isAdmin();
     }
 
     match /tracking/{trackingId} {
-      allow read: if isAdmin();
+      allow read: if isAuthenticated(); 
       allow create: if isAdmin() && isValidTracking(request.resource.data);
-      allow update: if isAdmin() && isValidTracking(request.resource.data) &&
-                    request.resource.data.markedAt == resource.data.markedAt &&
-                    request.resource.data.markedBy == resource.data.markedBy;
+      allow update: if isAdmin() && isValidTracking(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /leadership/{leaderId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin() && isValidLeader(request.resource.data);
+    }
+
+    match /governance/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin() && isValidGovernanceDoc(request.resource.data);
+    }
+
+    match /notifications/{notificationId} {
+      allow read: if isAuthenticated() && (resource.data.userId == null || resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isAdmin() && isValidNotification(request.resource.data);
+      allow update: if isAuthenticated() && (
+        (resource.data.userId == request.auth.uid && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read'])) ||
+        isAdmin()
+      );
       allow delete: if isAdmin();
     }
   }
